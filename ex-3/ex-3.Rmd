@@ -1,0 +1,141 @@
+---
+title: "Data wrangling and tidying with the Tidyverse"
+date: "`r Sys.Date()`"
+author: "___"
+output: 
+  html_document:
+    fig_width: 6
+    fig_height: 5
+    toc: true
+    toc_float: true
+---
+
+```{r setup}
+library(tidyverse)
+
+bookings <- read_csv("bookings.csv")
+properties <- read_csv("properties.csv")
+```
+
+## Task 1 - Base R vs. dplyr
+
+Create a new tibble `x` that
+
+- only contains the columns `room_nights` and `review_score`, and
+- only contains the bookings with a price per night of less than 80.
+
+1. ...using base `R` functions only, i.e., without using `dplyr` functions.
+2. ...using the `dplyr` functions `select()` and `filter()`.
+
+```{r 1}
+# base R
+x <- bookings[_____ < 80, c("room_nights", "review_score")]
+x
+
+# tidyverse
+x <- filter(bookings, _____ < 80)
+x <- select(x, _____, _____)
+x
+```
+
+## Task 2 - Pipelines
+
+Use `%>%` to write a pipeline which extracts all bookings with Friday as check-in
+day while only returning the columns `property_id` and `status`.
+
+```{r 2}
+bookings %>%
+  filter(_____ == "fri") %>%
+  select(_____, _____)
+```
+
+## Task 3 - `mutate()`
+
+Write a pipeline which calculates the mean-centered `price_per_night`. 
+Name the new column `centered_ppn`. 
+The returned data frame should only contain this new column.
+
+```{r 3}
+bookings %>% 
+  _____(_____ = price_per_night - mean(price_per_night)) %>%
+  select(centered_ppn) # only return new column
+```
+
+## Task 4 - `summary()`
+
+Obtain a one-row summary data frame of `bookings` containing the following statistics:
+
+- The number of rows (Hint: use the function `n()`)
+- The number of `"stayed"` bookings
+- The mean of the _total price_ (Hint: you have to compute the total price first)
+
+The output tibble should contain three columns and just one row.
+
+```{r 4}
+bookings %>%
+  mutate(total_price = _____ * _____) %>%
+  summarize(
+    n = _____,
+    n_stayed = _____,
+    mean_price = _____
+  )
+```
+
+## Task 5 - `group_by()` + `summarize()`
+
+Write a pipeline that returns only the most expensive booking of each property. 
+Select only the columns `property_id` and total price.
+
+You should get as many rows as there are unique properties:
+
+```{r 5-n_distinct}
+n_distinct(bookings$property_id) # convenience function for `length(unique(bookings$property_id))`
+```
+
+Recommended approach:
+
+1. Calculate `price_total` using `mutate()`.
+2. Group by `property_id` using `group_by()`.
+3. Filter rows where the total price is equal to the maximum of the total price
+(for that property using `filter()`).
+4. Select the columns `property_id` and `price_total` using `select()`.
+
+```{r 5}
+bookings %>%
+  mutate(price_total = _____ * _____) %>%
+  group_by(_____) %>%
+  arrange(desc(price_total)) %>%
+  slice(_____) %>% # guarantees that exactly one row is returned for each property
+  select(_____, _____)
+```
+
+## Task 6 - `*_join` functions
+
+Calculate the number of bookings per city.
+
+Hint: Join the tibbles `bookings` and `properties` and _count_ the number of rows per city.
+
+```{r 6}
+bookings %>%
+  _____(properties, by = "property_id") %>%
+  _____(destination)
+```
+
+## Task 7 - `pivot_*` functions
+
+_Do properties appeal to business travelers and tourists alike?_
+
+- Convert the column `for_business` to a factor with the levels `"business"` and `"tourist"`.
+- For each property and for business travelers and tourists separately, calculate the average review score.
+- Then, calculate the average review score difference between business travelers and tourists.
+
+```{r 7}
+bookings %>%
+  _____(for_business = factor(for_business, labels = c("business", "tourist"))) %>%
+  _____(property_id, for_business) %>%
+  _____(avg_review_score = mean(review_score, na.rm = TRUE)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = _____, values_from = _____) %>%
+  mutate(diff = business - tourist) %>%
+  _____(avg_diff = mean(diff, na.rm = TRUE))
+```
