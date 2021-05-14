@@ -1,0 +1,196 @@
+---
+title: "Predictors of child aggression"
+date: "`r Sys.Date()`"
+author: "___"
+output: 
+  html_document:
+    fig_width: 6
+    fig_height: 5
+    toc: true
+    toc_float: true
+---
+
+In this exercise, we examine the relationship between aggression and several potentially predictive factors in 666 children. 
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidymodels)
+cha <- read_csv("child_aggression.csv")
+```
+
+The 6 variables in the data are:
+
+- `aggression`: the higher the score, the more aggression has been observed in the child,
+- `tv`: the higher the score, the more time spent watching TV,
+- `video_games`: the higher the score, the more time spent playing video games,
+- `sibling_aggression`: the higher the score, the more aggression has been observed in their older sibling.
+- `diet`: the higher the score, the better the diet,
+- `parenting_style`: the higher the score, the worse the parenting practices,
+
+## Task 1
+
+Before we actually build regression models, we explore the variables of the data: 
+
+a. Print a summary of the data frame. Explain what a value of `tv` = 0 means in simple terms.
+b. Create a histogram for each variable. Tip: Use `facet_wrap()`
+c. Create a scatterplot for `parenting_style` vs. `tv`. Describe the bivariate relationship in terms of 
+    - linearity
+    - direction
+    - strength
+    - outliers
+
+(Just qualitatively, without using any measures.)
+
+```{r 1a}
+
+```
+
+```{r 1b, fig.width=8}
+cha %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value") %>%
+ggplot(aes(_____)) +
+  geom______() +
+  _____(~ _____)
+```
+
+
+```{r 1c}
+ggplot(cha, aes(x = _____, y = _____)) +
+  geom_____(alpha = .75)
+```
+
+## Task 2
+
+a. Create a correlation matrix (using Pearson correlation). 
+b. Interpret the coefficients between `aggression` and each of the other variables.
+c. For simple linear regression, the square of the Pearson correlation coefficient equals the coefficient of determination, i.e., $\rho^2 = R^2$. How much variability of `aggression` is explained by the explanatory variable that yields highest $R^2$?
+
+```{r 2-a}
+cor_df <- corrr::correlate(_____) # output as data frame
+cor_df
+```
+
+```{r 2-b}
+cor_df %>%
+  select(term, aggression) %>%
+  arrange(desc(aggression))
+```
+
+```{r 2-c}
+cor_df %>%
+  select(term, aggression) %>%
+  arrange(desc(aggression)) %>%
+  mutate(r_squared = _____)
+```
+
+## Task 3
+
+Create a multiple linear regression model $M_1$ with `aggression` as response and `parenting_style` and `sibling_aggression` as explanatory variables.
+Interpret each of the three model coefficients.
+
+```{r 3}
+m1 <- _____() %>%
+  set_engine(_____) %>%
+  fit(_____ ~ _____ + _____, data = _____) 
+m1 %>% tidy()
+```
+
+## Task 4
+
+Create a multiple linear regression model $M_2$ with `aggression` as response and all other variables as explanatory variables.
+Which predictor is most important? Which is least important?
+
+```{r 4}
+m2 <- _____() %>%
+  set_engine(_____) %>%
+  fit(_____ ~ _____, data = _____) 
+m2 %>% tidy()
+```
+  
+## Task 5
+
+Compare $M_1$ and $M_2$ with respect to $R^2$ and Adjusted $R^2$. 
+Which of the two models should we select?
+
+```{r 5}
+m1 %>% _____() 
+m2 %>% _____() 
+```
+
+## Task 6
+
+Consider Occam's razor for model selection and look again at $M_2$. 
+
+a. Create a new linear regression model $M_3$, but include only those variables which are significant according a confidence level $\alpha$=0.05. 
+In other words, remove the variable(s) from the regression equation with `p.value` > 0.05 in $M_2$. 
+b. Compare $M_2$ and $M_3$ with respect to Adjusted $R^2$. 
+
+```{r 6-a}
+m3 <- _____() %>%
+  set_engine(_____) %>%
+  fit(_____ ~ _____, data = _____ %>% select(_____)) 
+m3 %>% tidy()
+```
+
+```{r 6-b}
+m2 %>% glance()
+m3 %>% glance()
+```
+
+## Task 7
+
+For $M_2$ and each predictor, create a scatterplot with the predictor on the x-axis and `aggression` on the y-axis with Cook's distance as point color. Discuss whether some of the points with high Cook's distance have to be removed before generating the regression models.
+
+Repeat this for Leverage (hat values) and residuals.
+
+```{r 7}
+augmented_model <- augment(m2$fit, cha)
+augmented_model
+augmented_model %>%
+  pivot_longer(cols = tv:parenting_style) %>%
+  ggplot(aes(_____, _____)) +
+  geom_point(aes(color = _____), alpha = 0.5) +
+  facet_wrap(~ _____, scales = "free_x") +
+  scale_color_viridis_c(option = "inferno", direction = -1) 
+```
+
+## Task 8
+
+For the second model, how many observations have a standardized residuum of greater than 2 or smaller than -2?
+
+```{r}
+augmented_model %>%
+  filter(_____) %>%
+  nrow()
+```
+
+## Task 9 (Stretch)
+
+Explain what the following code does. Compare the model this code chunk builds with $M_2$.
+
+```{r lasso, eval = FALSE}
+wf <- workflow() %>%
+  add_model(
+    linear_reg(mixture = 1, penalty = tune()) %>% 
+      set_engine("glmnet")
+  ) %>%
+  add_formula(aggression ~ .)
+
+tune_penalty <- wf %>%
+  tune_grid(resamples = vfold_cv(cha, v = 5),
+            grid = tibble(penalty = seq(0.1, 1e-20, length.out = 20)))
+opt_penalty <- tune_penalty %>% select_best(metric = "rmse")
+opt_penalty
+
+wf_final <- wf %>% finalize_workflow(opt_penalty)
+wf_final
+
+wf_final %>%
+  fit(data = cha) %>%
+  tidy()
+```
+
+
+------
+
+Dataset `cha.csv` adapted from: Andy Field, Jeremy Miles, and Zoë Field. [Discovering Statistics Using R](https://studysites.uk.sagepub.com/dsur/main.htm). SAGE Publications, 2012.
