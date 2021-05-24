@@ -1,0 +1,214 @@
+---
+title: "Exercise 7: Predicting Ames house prices with tidymodels"
+date: "`r Sys.Date()`"
+author: "Ranji Raj"
+output: 
+  html_document:
+    fig_width: 6
+    fig_height: 5
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(AmesHousing)
+
+(ames <- make_ames() %>% select(-matches("Qu")))
+```
+
+## Task 1 - parsnip
+
+1. Create a simple linear regression model on the Ames data to predict _sale price_ (`Sale_Price`) based on _above ground living area_ (`Gr_Liv_Area`).
+2. Apply the model to the original data.
+3. Use `mutate()` to add a column with the observed sale prices; name it `truth`.
+
+```{r t1, eval = FALSE}
+lm_spec <- linear_reg() %>% 
+  set_engine(engine = "lm") %>%
+  set_mode(mode = "regression")
+
+lm_fit <- fit(object = lm_spec,
+              formula = Sale_Price ~ Gr_Liv_Area, 
+              data = ames)
+
+price_pred <- lm_fit %>% 
+  predict(new_data = ames) %>% 
+  mutate(truth = ames$Sale_Price)
+
+price_pred
+```
+
+## Task 2 - holdout validation
+
+Use `initial_split()`, `training()`, `testing()`, `lm()` and `rmse()` to:
+
+1. Split `ames` into a training (70%) and a test (30%) set. Save the `rsplit`.
+2. Extract the training data. Fit a linear model to it. Save the model as `lm_fit`.
+3. Measure the RMSE of your linear model with your test set.
+
+Keep `set.seed(100)` at the start of your code.
+
+```{r t2, eval = FALSE}
+set.seed(100)
+
+ames_split <- initial_split(ames, prop = 0.7)
+ames_train <- training(ames_split)
+ames_test <- testing(ames_split)
+
+lm_fit <- fit(lm_spec, Sale_Price ~ Gr_Liv_Area, data = ames)
+
+price_pred  <- lm_fit %>% 
+  predict(new_data = ames_test) %>% 
+  mutate(truth = ames_test$Sale_Price)
+
+rmse(price_pred, truth = truth, estimate = .pred)
+```
+
+## Task 3: k-fold cross validation
+
+Modify the code below to return the **Mean Absolute Error** and **R²**.
+Visit <https://yardstick.tidymodels.org/reference/index.html#section-regression-metrics> to find the right function to use.
+
+```{r t3, eval = FALSE}
+set.seed(100)
+
+folds <- vfold_cv(ames, v = 5)
+
+fit_res <- fit_resamples(object = lm_spec,
+                         preprocessor = Sale_Price ~ Gr_Liv_Area,
+                         resamples = folds,
+                         control = control_resamples())
+
+collect_metrics(fit_res, summarize = TRUE)
+```
+
+## Task 4: bootstrap validation - decision tree vs knn
+
+Compare the performance of a regression tree model with a k-nearest neighbor
+model on 10 bootstrap samples using RMSE as evaluation measure.
+
+Set `rpart` as engine for the decision tree model and `kknn` as engine for the
+k-nearest neighbor model. Leave all model-specific parameters (e.g. `tree_depth`
+and `neighbors`) at default.
+
+Which of the two methods perform better and why?
+
+```{r t4, eval = FALSE}
+set.seed(100)
+bs <- vfold_cv(ames, times = 10)
+
+#decision tree model
+rt_spec <- decision_tree() %>%          
+  set_engine(engine = "rpart") %>% 
+  set_mode("regression")
+
+fbs <- fit_resamples(rt_spec, Sale_Price ~ Gr_Liv_Area, resamples = bs)
+fbs %>% collect_metrics()
+
+#k-nearest neighbor model
+knn_spec <- nearest_neighbor() %>%          
+  set_engine(engine = "kknn") %>% 
+  set_mode("regression")
+
+fknn <- fit_resamples(knn_spec, Sale_Price ~ Gr_Liv_Area, resamples = bs)
+fknn %>% collect_metrics()
+```
+`regression tree` model performs better. The RMSE for `std_err` is comparatively lower.
+
+
+## Task 5: investigating non-default hyperparameter values
+
+Create a new classification tree model specification; name it `big_tree_spec`.
+Set the cost complexity to 0, and the minimum number of data points in a node to split to 1.
+
+Compare the metrics of the big tree to the vanilla tree.
+Which one predicts the test set better?
+
+Vanilla tree performance:
+
+- accuracy = 0.64
+- ROC AUC = 0.66
+
+```{r t5, eval = FALSE}
+stackoverflow <- read_rds(here::here("C:/Users/User/Downloads/datascir21/ex/ex-7/stackoverflow.rds"))
+set.seed(100)
+so_cv <- vfold_cv(stackoverflow, v = 5)
+
+big_tree_spec <- decision_tree(min_n = 1, cost_complexity = 0) %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+
+fit_resamples(big_tree_spec,
+              remote ~ .,
+              resamples = so_cv) %>%
+  collect_metrics()
+```
+Better predictor on the test set: Vanilla tree as the ROC AUC value is better.
+
+
+## Task 6: hyperparameter tuning
+
+Create a KNN workflow on the Ames house prices problem that tunes over the number of neighbors in a 5-fold stratified CV scheme.
+The candidate values of `neighbors` are `1, 11, 21, 31, ..., 101`.
+
+```{r t6, eval = FALSE}
+k_grid <- expand_grid(neighbors = seq(1,101,10))
+
+knn_tuner <- nearest_neighbor(neighbors = tune()) %>% 
+  set_engine("kknn") %>% 
+  set_mode("regression")
+
+knn_twf <- workflow() %>% 
+  add_model(knn_tuner) %>%
+  add_formula(Sale_Price ~ Gr_Liv_Area)
+
+set.seed(100)
+cv_folds <- vfold_cv(ames, v = 5, strata = Sale_Price, breaks = 4)
+knn_results <- knn_twf %>% tune_grid(resamples = cv_folds, grid = k_grid) 
+
+knn_rmse <- knn_results %>% 
+  collect_metrics() %>% 
+  filter(.metric == "rmse")
+knn_rmse
+```
+
+## Task 7: z-scoring with recipes
+
+Create a recipe that performs z-score normalization on each numeric variable of the ames data.
+
+A z-score is calculated by subtracting the variable mean from an individual raw value and then dividing the difference by the variable standard deviation.
+
+Tip: Look up the appropriate `step_*()` functions at <https://tidymodels.github.io/recipes/reference/index.html>.
+
+```{r t7, eval=FALSE}
+recipe(Sale_Price ~ ., data = ames) %>% 
+  step_normalize(all_numeric())
+```
+
+## Task 8: preprocessing pipelines
+
+Write a recipe for the Ames data that:
+
+1. adds a novel level to all factors
+2. converts all factors to dummy variables
+3. catches any zero variance variables
+4. centers all of the predictors
+5. scales all of the predictors
+6. computes the first 3 principal components
+
+Save the result as `pca_rec`.
+
+```{r t8, eval=FALSE}
+pca_rec <- 
+  recipe(Sale_Price ~ ., data = ames) %>%
+  step_novel(all_nominal()) %>%
+  step_dummy(all_nominal()) %>%
+  step_zv(all_predictors()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors()) %>%
+  step_pca(all_predictors(), num_comp = 3)
+pca_rec
+```
+
